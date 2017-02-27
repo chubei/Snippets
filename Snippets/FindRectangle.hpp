@@ -15,7 +15,7 @@ struct FindRectangleParameter : public ParameterPack {
     double canny_high{ 60 };
     double hough_pixel_res{ 1 };
     double hough_angle_res{ CV_PI / 180 };
-    int hough_threshold{ 20 };
+    int hough_threshold{ 80 };
     double hough_line_length{ 50 };
     double hough_line_gap{ 20 };
 };

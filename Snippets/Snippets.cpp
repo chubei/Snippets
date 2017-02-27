@@ -33,7 +33,7 @@ int main() {
     visualizer.setMaxValue(&para.hough_angle_res, 10 * CV_PI / 180);
     visualizer.setPrecision(&para.hough_angle_res, CV_PI / 1800);
     visualizer.setMaxValue(&para.hough_threshold, 200);
-    visualizer.showInNewWindow("input");
+    visualizer.showInNewWindow("para");
 
     while (cap.read(frame)) {
         cv::imshow("input", frame);

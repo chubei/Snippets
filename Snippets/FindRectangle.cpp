@@ -57,7 +57,7 @@ std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParamete
         else {
             int rows = edge_image.rows, cols = edge_image.cols;
             cv::Point2d boarder_intersections[] = { {0., rho / b}, {cols - 1., (rho - a * (cols - 1.)) / b},
-            {rho / a, 0.}, {(rho - b * (cols - 1.)) / a, cols - 1.} };
+            {rho / a, 0.}, {(rho - b * (rows - 1.)) / a, rows - 1.} };
             cv::Point2d valid_intersections[2];
             int boarder_index = 0, valid_intersection_count = 0;
             while (boarder_index < 4 && valid_intersection_count < 2) {

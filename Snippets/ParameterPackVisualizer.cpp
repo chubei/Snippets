@@ -30,6 +30,18 @@ void ParameterPackVisualizer::setPrecision(void * pData, double precision) {
         }
 }
 
+void ParameterPackVisualizer::setMaxValueAndPrecision(void * pData, double maxValue, double precision) {
+    if (!_pPack)
+        return;
+
+    for (size_t i = 0; i < _pPack->_parameters.size(); ++i)
+        if (_pPack->_parameters[i]._pData == pData) {
+            _trackBarData[i].maxValue = maxValue;
+            _trackBarData[i].precision = precision;
+            return;
+        }
+}
+
 void ParameterPackVisualizer::showInNewWindow(const char * name) {
     cv::namedWindow(name);
     showInExistingWindow(name);

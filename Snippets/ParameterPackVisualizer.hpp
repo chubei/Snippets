@@ -15,6 +15,7 @@ public:
     void setCallback(CallbackType const& callback) { _callback = callback; }
     void setMaxValue(void* pData, double maxValue);
     void setPrecision(void* pData, double precision);
+    void setMaxValueAndPrecision(void* pData, double maxValue, double precision);
 
     void showInNewWindow(const char* name);
     void showInExistingWindow(const char* name);

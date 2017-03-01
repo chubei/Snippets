@@ -12,6 +12,7 @@ struct FindRectangleParameter : public ParameterPack {
         registerParameter(seg_ratio_low, "low");
         registerParameter(seg_ratio_high, "high");
         registerParameter(seg_threshold, "thres");
+        registerParameter(intersection_gap_ratio, "gap");
     }
 
     double canny_low{ 30 };
@@ -22,6 +23,7 @@ struct FindRectangleParameter : public ParameterPack {
     double seg_ratio_low{ 0.6 };
     double seg_ratio_high{ 0.9 };
     int seg_threshold{ 20 };
+    double intersection_gap_ratio{ 0.1 };
 };
 
 std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParameter const& para);

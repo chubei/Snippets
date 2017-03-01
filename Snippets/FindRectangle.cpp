@@ -6,25 +6,64 @@
 #include <atomic>
 
 namespace {
-    std::vector<cv::Point2i> PointsOnLine(float rho, float theta, int rows, int cols) {
-        std::vector<cv::Point2i> points;
+    struct Segment {
+        cv::Vec3d a_b_rho;
+        cv::Point2d pt1, pt2;
+
+        double ParameterizePointOnLine(cv::Point2d const& pt) const {
+            if (abs(pt2.x - pt1.x) < 1e-6)
+                return (pt.y - pt1.y) / (pt2.y - pt1.y);
+            else
+                return (pt.x - pt1.x) / (pt2.x - pt1.x);
+        }
+
+        cv::Point2d Intersection(Segment const& segment) const {
+            double a1 = a_b_rho[0], b1 = a_b_rho[1], rho1 = a_b_rho[2];
+            double a2 = segment.a_b_rho[0], b2 = segment.a_b_rho[1], rho2 = segment.a_b_rho[2];
+            double det = a1 * b2 - a2 * b1;
+            if (det < 1e-6)
+                return cv::Point2d(std::numeric_limits<double>::max(), std::numeric_limits<double>::max());
+            double idet = 1 / det;
+            return cv::Point2d((b2 * rho1 - b1 * rho2) * idet, (a1 * rho2 - a2 * rho1) * idet);
+        }
+    };
+
+    struct SegmentWithEdgeInfo {
+        std::vector<bool> point_is_edge;
+        Segment segment;
+    };
+
+    SegmentWithEdgeInfo PointsOnLine(float rho, float theta, cv::Mat const& edge_image) {
+        SegmentWithEdgeInfo ret;
         double a = cos(theta), b = sin(theta);
+        int rows = edge_image.rows, cols = edge_image.cols;
+        ret.segment.a_b_rho = cv::Vec3d(a, b, rho);
+
+        auto IsEdge = [&edge_image](int x, int y) {
+            return edge_image.at<uchar>(y, x) > 128;
+        };
 
         if (abs(b) < 1e-6) { // vertical
             int x = (int)round(rho / a);
             if (x < 0 || x >= cols)
-                return points;
-            points.reserve(rows);
+                return ret;
+            ret.point_is_edge.reserve(rows);
             for (int y = 0; y < rows; ++y)
-                points.push_back({ x, y });
+                ret.point_is_edge.push_back(IsEdge(x, y));
+
+            ret.segment.pt1 = { rho / a, 0. };
+            ret.segment.pt2 = { rho / a, rows - 1. };
         }
         else if (abs(a) < 1e-6) { // horizontal
             int y = (int)round(rho / b);
             if (y < 0 || y >= rows)
-                return points;
-            points.reserve(cols);
+                return ret;
+            ret.point_is_edge.reserve(cols);
             for (int x = 0; x < cols; ++x)
-                points.push_back({ x, y });
+                ret.point_is_edge.push_back(IsEdge(x, y));
+
+            ret.segment.pt1 = { 0., rho / b };
+            ret.segment.pt2 = { cols - 1., rho / b };
         }
         else {
             cv::Point2d boarder_intersections[] = { { 0., rho / b },{ cols - 1., (rho - a * (cols - 1.)) / b },
@@ -46,26 +85,29 @@ namespace {
                 if (pt1.y > pt2.y)
                     std::swap(pt1, pt2);
                 int ystart = (int)floor(pt1.y), yend = (int)ceil(pt2.y) + 1;
-                points.reserve(yend - ystart);
+                ret.point_is_edge.reserve(yend - ystart);
                 for (int y = ystart; y < yend; ++y) {
                     int x = (int)round((rho - b * double(y)) / a);
                     if (x >= 0 && x <= cols - 1)
-                        points.push_back({ x, y });
+                        ret.point_is_edge.push_back(IsEdge(x, y));
                 }
             }
             else { // sample along x
                 if (pt1.x > pt2.x)
                     std::swap(pt1, pt2);
                 int xstart = (int)floor(pt1.x), xend = (int)ceil(pt2.x) + 1;
-                points.reserve(xend - xstart);
+                ret.point_is_edge.reserve(xend - xstart);
                 for (int x = xstart; x < xend; ++x) {
                     int y = (int)round((rho - a * double(x)) / b);
                     if (y >= 0 && y <= rows - 1)
-                        points.push_back({ x, y });
+                        ret.point_is_edge.push_back(IsEdge(x, y));
                 }
             }
+
+            ret.segment.pt1 = pt1;
+            ret.segment.pt2 = pt2;
         }
-        return points;
+        return ret;
     }
 }
 
@@ -118,10 +160,6 @@ std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParamete
     // 1. more than $ratio_low points on line are edge points
     // 2. exists a sub-segment of at least $length points that more than $ratio_high points on line are edge points
 
-    struct Segment {
-        cv::Vec2f rho_theta;
-        cv::Point2i pt1, pt2;
-    };
     std::vector<Segment> line_segments;
     size_t line_index = 0;
     std::mutex line_segments_mutex, line_index_mutex;
@@ -129,26 +167,20 @@ std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParamete
     auto find_segment = [&]() {
         while (true) {
             line_index_mutex.lock();
-            if (line_index >= lines.size()) {
-                line_index_mutex.unlock();
-                return;
-            }
-            size_t cur_index = line_index;
-            ++line_index;
+            size_t cur_index = line_index++;
             line_index_mutex.unlock();
+
+            if (cur_index >= lines.size())
+                return;
 
             //float rho = lines[cur_index][0], theta = lines[cur_index][1];
             //if (abs(rho - rho0) < 1 && abs(theta - theta0) < CV_PI / 180)
             //    __debugbreak();
 
-            std::vector<cv::Point2i> points = PointsOnLine(lines[cur_index][0], lines[cur_index][1], edge_image.rows, edge_image.cols);
-            if (points.empty())
+            SegmentWithEdgeInfo segment_with_edge_info = PointsOnLine(lines[cur_index][0], lines[cur_index][1], edge_image);
+            if (segment_with_edge_info.point_is_edge.empty())
                 continue;
-
-            std::vector<bool> point_is_edge(points.size());
-            std::transform(points.begin(), points.end(), point_is_edge.begin(), [&edge_image](cv::Point2i const& pt) {
-                return edge_image.at<uchar>(pt) > 128;
-            });
+            auto const& point_is_edge = segment_with_edge_info.point_is_edge;
 
             // brute-force search for segment satisfying 2
             std::vector<size_t> edge_count(point_is_edge.size());
@@ -190,8 +222,10 @@ std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParamete
         record_result:
             line_segments_mutex.lock();
             line_segments.resize(line_segments.size() + 1);
-            line_segments.back().pt1 = points[seg_start];
-            line_segments.back().pt2 = points[seg_end - 1];
+            auto const& full_segment = segment_with_edge_info.segment;
+            line_segments.back().a_b_rho = full_segment.a_b_rho;
+            line_segments.back().pt1 = full_segment.pt1 + double(seg_start) / double(point_is_edge.size() - 1) * (full_segment.pt2 - full_segment.pt1);
+            line_segments.back().pt2 = full_segment.pt1 + double(seg_end) / double(point_is_edge.size()) * (full_segment.pt2 - full_segment.pt1);
             line_segments_mutex.unlock();
         }
     };
@@ -202,9 +236,63 @@ std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParamete
     for (auto& worker : find_segment_workers)
         worker.join();
 
+    // construct intersection graph
+    std::vector<std::pair<size_t, size_t>> intersection_pair;
+    for (size_t i = 0; i < line_segments.size(); ++i) {
+        for (size_t j = i + 1; j < line_segments.size(); ++j)
+            intersection_pair.push_back({ i, j });
+    }
+    size_t inter_pair_index = 0;
+    std::mutex inter_pair_index_mutex;
+
+    struct Intersection {
+        Intersection(cv::Point2d const& p, std::pair<size_t, size_t> const& i) 
+            : pt(p)
+            , segment_indices(i)
+        { }
+
+        cv::Point2d pt;
+        std::pair<size_t, size_t> segment_indices;
+    };
+    std::vector<Intersection> line_intersections;
+    std::mutex line_inter_mutex;
+
+    auto find_intersection = [&]() {
+        while (true) {
+            inter_pair_index_mutex.lock();
+            size_t cur_index = inter_pair_index++;
+            inter_pair_index_mutex.unlock();
+
+            if (cur_index >= intersection_pair.size())
+                return;
+
+            auto const& pair = intersection_pair[cur_index];
+            auto const& seg1 = line_segments[pair.first];
+            auto const& seg2 = line_segments[pair.second];
+            cv::Point2d intersection = seg1.Intersection(seg2);
+            auto is_valid_intersection = [&para](Segment const& seg, cv::Point2d const& pt) {
+                double ratio = seg.ParameterizePointOnLine(pt);
+                return ratio > -para.intersection_gap_ratio && ratio < 1. + para.intersection_gap_ratio;
+            };
+
+            if (is_valid_intersection(seg1, intersection) && is_valid_intersection(seg2, intersection))                 {
+                line_inter_mutex.lock();
+                line_intersections.emplace_back(intersection, pair);
+                line_inter_mutex.unlock();
+            }
+        }
+    };
+    std::vector<std::thread> find_intersection_workers;
+    for (int i = 0; i < 4; ++i)
+        find_intersection_workers.emplace_back(find_intersection);
+    for (auto& worker : find_intersection_workers)
+        worker.join();
+
     cv::Mat seg_image = img.clone();
     for (auto const& seg : line_segments)
         cv::line(seg_image, seg.pt1, seg.pt2, cv::Scalar(255, 0, 0));
+    for (auto const& inter : line_intersections)
+        cv::circle(seg_image, inter.pt, 1, cv::Scalar(0, 255, 0), 3);
     cv::imshow("segments", seg_image);
 
     return std::vector<cv::Point2f>();

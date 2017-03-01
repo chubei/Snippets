@@ -1,4 +1,3 @@
-#include "stdafx.h"
 #include "FindRectangle.hpp"
 #include <opencv2/highgui.hpp>
 #include <iostream>
@@ -90,16 +89,29 @@ std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParamete
     std::vector<cv::Vec2f> lines;
     cv::HoughLines(edge_image, lines, para.hough_pixel_res, para.hough_angle_res, para.hough_threshold);
 
+    //cv::Point2i pt1(145, 123), pt2(279, 183);
+    //double k = double(pt2.y - pt1.y) / double(pt2.x - pt1.x);
+    //double b = 1 / sqrt(1 + k * k);
+    //if (b < 0)
+    //    b = -b;
+    //double a = -k * b;
+    //float rho0 = float(a * pt1.x + b * pt1.y);
+    //float theta0 = float(acos(a));
+
     cv::Mat hough_image = edge_image.clone();
     hough_image = cv::Scalar(0);
     for (auto const& line : lines) {
         float rho = line[0], theta = line[1];
+
+        //if (abs(rho - rho0) < 1 && abs(theta - theta0) < CV_PI / 180) {
         double a = cos(theta), b = sin(theta);
         double x0 = a * rho, y0 = b * rho;
         cv::Point pt1(cvRound(x0 - 1000 * b), cvRound(y0 + 1000 * a));
         cv::Point pt2(cvRound(x0 + 1000 * b), cvRound(y0 - 1000 * a));
         cv::line(hough_image, pt1, pt2, cv::Scalar(255));
+        //}
     }
+    hough_image = cv::min(hough_image, edge_image);
     cv::imshow("hough", hough_image);
 
     // try to find longest line segment s.t.
@@ -124,6 +136,10 @@ std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParamete
             size_t cur_index = line_index;
             ++line_index;
             line_index_mutex.unlock();
+
+            //float rho = lines[cur_index][0], theta = lines[cur_index][1];
+            //if (abs(rho - rho0) < 1 && abs(theta - theta0) < CV_PI / 180)
+            //    __debugbreak();
 
             std::vector<cv::Point2i> points = PointsOnLine(lines[cur_index][0], lines[cur_index][1], edge_image.rows, edge_image.cols);
             if (points.empty())
@@ -158,20 +174,22 @@ std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParamete
 
             // brute-force search for segment satisfying 2 while containing core segment
             size_t seg_start = core_seg_start, seg_end = core_seg_end;
-            //for (size_t seg_length = point_is_edge.size(); seg_length >= core_seg_end - core_seg_start; --seg_length) {
-            //    for (seg_end = point_is_edge.size(); seg_end >= seg_length && seg_end >= core_seg_end && seg_end - seg_length <= seg_start; --seg_end) {
-            //        size_t start = seg_end - seg_length;
-            //        if ((edge_count[seg_end - 1] - (start > 0 ? edge_count[start - 1] : 0)) / (double)seg_length >= para.seg_ratio_low) {
-            //            seg_start = start;
-            //            goto record_result;
-            //        }
-            //    }
-            //}
+            for (size_t seg_length = point_is_edge.size(); seg_length >= core_seg_end - core_seg_start; --seg_length) {
+                for (size_t end = point_is_edge.size(); end >= seg_length && end >= core_seg_end; --end) {
+                    size_t start = end - seg_length;
+                    if (start > core_seg_start)
+                        continue;
+                    if ((edge_count[end - 1] - (start > 0 ? edge_count[start - 1] : 0)) / (double)seg_length >= para.seg_ratio_low) {
+                        seg_start = start;
+                        seg_end = end;
+                        goto record_result;
+                    }
+                }
+            }
 
         record_result:
             line_segments_mutex.lock();
             line_segments.resize(line_segments.size() + 1);
-            line_segments.back().rho_theta = lines[cur_index];
             line_segments.back().pt1 = points[seg_start];
             line_segments.back().pt2 = points[seg_end - 1];
             line_segments_mutex.unlock();
@@ -184,7 +202,7 @@ std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParamete
     for (auto& worker : find_segment_workers)
         worker.join();
 
-    cv::Mat seg_image = img;
+    cv::Mat seg_image = img.clone();
     for (auto const& seg : line_segments)
         cv::line(seg_image, seg.pt1, seg.pt2, cv::Scalar(255, 0, 0));
     cv::imshow("segments", seg_image);

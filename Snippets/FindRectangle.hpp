@@ -18,10 +18,10 @@ struct FindRectangleParameter : public ParameterPack {
     double canny_high{ 60 };
     double hough_pixel_res{ 1 };
     double hough_angle_res{ CV_PI / 180 };
-    int hough_threshold{ 80 };
-    double seg_ratio_low{ 0.7 };
+    int hough_threshold{ 100 };
+    double seg_ratio_low{ 0.6 };
     double seg_ratio_high{ 0.9 };
-    int seg_threshold{ 30 };
+    int seg_threshold{ 20 };
 };
 
 std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParameter const& para);

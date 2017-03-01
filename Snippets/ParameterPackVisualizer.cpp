@@ -1,4 +1,3 @@
-#include "stdafx.h"
 #include "ParameterPack.hpp"
 #include "ParameterPackVisualizer.hpp"
 #include <opencv2\highgui.hpp>

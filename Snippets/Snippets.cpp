@@ -1,10 +1,9 @@
 // Snippets.cpp : Defines the entry point for the console application.
 //
 
-#include "stdafx.h"
+#include "FindRectangle.hpp"
 #include <opencv2/highgui.hpp>
 #include "ParameterPackVisualizer.hpp"
-#include "FindRectangle.hpp"
 
 int main() {
     cv::VideoCapture cap("otag.mp4");
@@ -33,7 +32,7 @@ int main() {
     visualizer.setMaxValue(&para.hough_threshold, 200);
     visualizer.setMaxValueAndPrecision(&para.seg_ratio_low, 1, 0.01);
     visualizer.setMaxValueAndPrecision(&para.seg_ratio_high, 1, 0.01);
-    visualizer.setMaxValue(&para.seg_threshold, 200);
+    visualizer.setMaxValue(&para.seg_threshold, 30);
     visualizer.showInNewWindow("para");
 
     int frame_count = 0;
@@ -41,10 +40,6 @@ int main() {
         ++frame_count;
         if (frame_count < 80)
             continue;
-
-        cv::imshow("input", frame);
-        cv::namedWindow("canny");
-        cv::namedWindow("hough");
 
         find_rectangle(frame, para);
 

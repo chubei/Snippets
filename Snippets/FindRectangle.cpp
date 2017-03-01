@@ -11,7 +11,7 @@ namespace {
         cv::Point2d pt1, pt2;
 
         double ParameterizePointOnLine(cv::Point2d const& pt) const {
-            if (abs(pt2.x - pt1.x) < 1e-6)
+            if (abs(pt2.x - pt1.x) < abs(pt2.y - pt1.y))
                 return (pt.y - pt1.y) / (pt2.y - pt1.y);
             else
                 return (pt.x - pt1.x) / (pt2.x - pt1.x);
@@ -21,10 +21,14 @@ namespace {
             double a1 = a_b_rho[0], b1 = a_b_rho[1], rho1 = a_b_rho[2];
             double a2 = segment.a_b_rho[0], b2 = segment.a_b_rho[1], rho2 = segment.a_b_rho[2];
             double det = a1 * b2 - a2 * b1;
-            if (det < 1e-6)
+            if (abs(det) < 1e-6)
                 return cv::Point2d(std::numeric_limits<double>::max(), std::numeric_limits<double>::max());
             double idet = 1 / det;
             return cv::Point2d((b2 * rho1 - b1 * rho2) * idet, (a1 * rho2 - a2 * rho1) * idet);
+        }
+
+        double DirDotProduct(Segment const& segment) const {
+            return abs((a_b_rho[1] * segment.a_b_rho[1]) + (a_b_rho[0] * segment.a_b_rho[0]));
         }
     };
 
@@ -236,6 +240,11 @@ std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParamete
     for (auto& worker : find_segment_workers)
         worker.join();
 
+    cv::Mat seg_image = img.clone();
+    cv::RNG rng(0);
+    for (auto const& seg : line_segments)
+        cv::line(seg_image, seg.pt1, seg.pt2, cv::Scalar(rng.uniform(0, 255), rng.uniform(0, 255), rng.uniform(0, 255)));
+
     // construct intersection graph
     std::vector<std::pair<size_t, size_t>> intersection_pair;
     for (size_t i = 0; i < line_segments.size(); ++i) {
@@ -246,10 +255,10 @@ std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParamete
     std::mutex inter_pair_index_mutex;
 
     struct Intersection {
-        Intersection(cv::Point2d const& p, std::pair<size_t, size_t> const& i) 
+        Intersection(cv::Point2d const& p, std::pair<size_t, size_t> const& i)
             : pt(p)
-            , segment_indices(i)
-        { }
+            , segment_indices(i) {
+        }
 
         cv::Point2d pt;
         std::pair<size_t, size_t> segment_indices;
@@ -258,6 +267,7 @@ std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParamete
     std::mutex line_inter_mutex;
 
     auto find_intersection = [&]() {
+        double max_dir_dot = cos(para.intersection_angle);
         while (true) {
             inter_pair_index_mutex.lock();
             size_t cur_index = inter_pair_index++;
@@ -272,10 +282,11 @@ std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParamete
             cv::Point2d intersection = seg1.Intersection(seg2);
             auto is_valid_intersection = [&para](Segment const& seg, cv::Point2d const& pt) {
                 double ratio = seg.ParameterizePointOnLine(pt);
-                return ratio > -para.intersection_gap_ratio && ratio < 1. + para.intersection_gap_ratio;
+                return (ratio > -para.intersection_gap_ratio) && (ratio < 1. + para.intersection_gap_ratio);
             };
 
-            if (is_valid_intersection(seg1, intersection) && is_valid_intersection(seg2, intersection))                 {
+            if (is_valid_intersection(seg1, intersection) && is_valid_intersection(seg2, intersection)
+                && seg1.DirDotProduct(seg2) < max_dir_dot) {
                 line_inter_mutex.lock();
                 line_intersections.emplace_back(intersection, pair);
                 line_inter_mutex.unlock();
@@ -288,9 +299,6 @@ std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParamete
     for (auto& worker : find_intersection_workers)
         worker.join();
 
-    cv::Mat seg_image = img.clone();
-    for (auto const& seg : line_segments)
-        cv::line(seg_image, seg.pt1, seg.pt2, cv::Scalar(255, 0, 0));
     for (auto const& inter : line_intersections)
         cv::circle(seg_image, inter.pt, 1, cv::Scalar(0, 255, 0), 3);
     cv::imshow("segments", seg_image);

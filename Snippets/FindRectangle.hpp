@@ -14,7 +14,6 @@ struct FindRectangleParameter : public ParameterPack {
         registerParameter(seg_ratio_high, "high");
         registerParameter(seg_core_threshold, "core");
         registerParameter(seg_threshold, "thres");
-        registerParameter(intersection_gap_ratio, "gap");
     }
 
     double canny_low{ 30 };
@@ -25,7 +24,7 @@ struct FindRectangleParameter : public ParameterPack {
     double seg_ratio_low{ 0.6 };
     double seg_ratio_high{ 0.9 };
     int seg_core_threshold{ 20 };
-    int seg_threshold{ 80 };
+    int seg_threshold{ 120 };
     double intersection_gap_ratio{ 0.1 };
     double intersection_angle{ CV_PI / 4. };
 };

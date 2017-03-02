@@ -6,8 +6,12 @@
 #include <atomic>
 
 namespace {
+    double PointDistance(cv::Point2d const& pt1, cv::Point2d const& pt2) {
+        return sqrt((pt1.x - pt2.x) * (pt1.x - pt2.x) + (pt1.y - pt2.y) * (pt1.y - pt2.y));
+    }
+
     struct Segment {
-        cv::Vec3d a_b_rho;
+        cv::Vec4d a_b_rho_theta;
         cv::Point2d pt1, pt2;
 
         double ParameterizePointOnLine(cv::Point2d const& pt) const {
@@ -18,8 +22,8 @@ namespace {
         }
 
         cv::Point2d Intersection(Segment const& segment) const {
-            double a1 = a_b_rho[0], b1 = a_b_rho[1], rho1 = a_b_rho[2];
-            double a2 = segment.a_b_rho[0], b2 = segment.a_b_rho[1], rho2 = segment.a_b_rho[2];
+            double a1 = a_b_rho_theta[0], b1 = a_b_rho_theta[1], rho1 = a_b_rho_theta[2];
+            double a2 = segment.a_b_rho_theta[0], b2 = segment.a_b_rho_theta[1], rho2 = segment.a_b_rho_theta[2];
             double det = a1 * b2 - a2 * b1;
             if (abs(det) < 1e-6)
                 return cv::Point2d(std::numeric_limits<double>::max(), std::numeric_limits<double>::max());
@@ -28,7 +32,11 @@ namespace {
         }
 
         double DirDotProduct(Segment const& segment) const {
-            return abs((a_b_rho[1] * segment.a_b_rho[1]) + (a_b_rho[0] * segment.a_b_rho[0]));
+            return abs((a_b_rho_theta[1] * segment.a_b_rho_theta[1]) + (a_b_rho_theta[0] * segment.a_b_rho_theta[0]));
+        }
+
+        double Length() const {
+            return PointDistance(pt1, pt2);
         }
     };
 
@@ -41,7 +49,7 @@ namespace {
         SegmentWithEdgeInfo ret;
         double a = cos(theta), b = sin(theta);
         int rows = edge_image.rows, cols = edge_image.cols;
-        ret.segment.a_b_rho = cv::Vec3d(a, b, rho);
+        ret.segment.a_b_rho_theta = cv::Vec4d(a, b, rho, theta);
 
         auto IsEdge = [&edge_image](int x, int y) {
             return edge_image.at<uchar>(y, x) > 128;
@@ -224,29 +232,29 @@ std::vector<std::array<cv::Point2f, 4>> findRectangle(cv::Mat const& img, FindRe
     std::vector<cv::Vec2f> lines;
     cv::HoughLines(edge_image, lines, para.hough_pixel_res, para.hough_angle_res, para.hough_threshold);
 
-    //cv::Point2i pt1(145, 123), pt2(279, 183);
-    //double k = double(pt2.y - pt1.y) / double(pt2.x - pt1.x);
-    //double b = 1 / sqrt(1 + k * k);
-    //if (b < 0)
-    //    b = -b;
-    //double a = -k * b;
-    //float rho0 = float(a * pt1.x + b * pt1.y);
-    //float theta0 = float(acos(a));
+    cv::Point2i pt1(145, 123), pt2(279, 183);
+    double k = double(pt2.y - pt1.y) / double(pt2.x - pt1.x);
+    double b = 1 / sqrt(1 + k * k);
+    if (b < 0)
+        b = -b;
+    double a = -k * b;
+    float rho0 = float(a * pt1.x + b * pt1.y);
+    float theta0 = float(acos(a));
 
     cv::Mat hough_image = edge_image.clone();
-    hough_image = cv::Scalar(0);
+    //hough_image = cv::Scalar(0);
     for (auto const& line : lines) {
         float rho = line[0], theta = line[1];
 
-        //if (abs(rho - rho0) < 1 && abs(theta - theta0) < CV_PI / 180) {
+        if (abs(rho - rho0) < 1 && abs(theta - theta0) < CV_PI / 180) {
         double a = cos(theta), b = sin(theta);
         double x0 = a * rho, y0 = b * rho;
         cv::Point pt1(cvRound(x0 - 1000 * b), cvRound(y0 + 1000 * a));
         cv::Point pt2(cvRound(x0 + 1000 * b), cvRound(y0 - 1000 * a));
         cv::line(hough_image, pt1, pt2, cv::Scalar(255));
-        //}
+        }
     }
-    hough_image = cv::min(hough_image, edge_image);
+    //hough_image = cv::min(hough_image, edge_image);
     cv::imshow("hough", hough_image);
 
     // try to find longest line segment s.t.
@@ -265,9 +273,9 @@ std::vector<std::array<cv::Point2f, 4>> findRectangle(cv::Mat const& img, FindRe
             if (cur_index >= lines.size())
                 return;
 
-            //float rho = lines[cur_index][0], theta = lines[cur_index][1];
-            //if (abs(rho - rho0) < 1 && abs(theta - theta0) < CV_PI / 180)
-            //    __debugbreak();
+            float rho = lines[cur_index][0], theta = lines[cur_index][1];
+            if (abs(rho - rho0) < 1 && abs(theta - theta0) < CV_PI / 180)
+                int i = 0;
 
             SegmentWithEdgeInfo segment_with_edge_info = PointsOnLine(lines[cur_index][0], lines[cur_index][1], edge_image);
             if (segment_with_edge_info.point_is_edge.empty())
@@ -306,18 +314,22 @@ std::vector<std::array<cv::Point2f, 4>> findRectangle(cv::Mat const& img, FindRe
                     if ((edge_count[end - 1] - (start > 0 ? edge_count[start - 1] : 0)) / (double)seg_length >= para.seg_ratio_low) {
                         seg_start = start;
                         seg_end = end;
-                        goto record_result;
+                        goto check_seg;
                     }
                 }
             }
 
-        record_result:
-            line_segments_mutex.lock();
-            line_segments.resize(line_segments.size() + 1);
+        check_seg:
             auto const& full_segment = segment_with_edge_info.segment;
-            line_segments.back().a_b_rho = full_segment.a_b_rho;
-            line_segments.back().pt1 = full_segment.pt1 + double(seg_start) / double(point_is_edge.size() - 1) * (full_segment.pt2 - full_segment.pt1);
-            line_segments.back().pt2 = full_segment.pt1 + double(seg_end) / double(point_is_edge.size()) * (full_segment.pt2 - full_segment.pt1);
+            if (seg_end - seg_start < para.seg_threshold)
+                continue;
+
+            Segment edge_segment;
+            edge_segment.a_b_rho_theta = full_segment.a_b_rho_theta;
+            edge_segment.pt1 = full_segment.pt1 + double(seg_start) / double(point_is_edge.size() - 1) * (full_segment.pt2 - full_segment.pt1);
+            edge_segment.pt2 = full_segment.pt1 + double(seg_end) / double(point_is_edge.size()) * (full_segment.pt2 - full_segment.pt1);
+            line_segments_mutex.lock();
+            line_segments.push_back(edge_segment);
             line_segments_mutex.unlock();
         }
     };

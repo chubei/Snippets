@@ -42,7 +42,7 @@ void ParameterPackVisualizer::setMaxValueAndPrecision(void * pData, double maxVa
 }
 
 void ParameterPackVisualizer::showInNewWindow(const char * name) {
-    cv::namedWindow(name);
+    cv::namedWindow(name, cv::WINDOW_NORMAL | cv::WINDOW_GUI_EXPANDED);
     showInExistingWindow(name);
 }
 

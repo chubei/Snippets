@@ -12,13 +12,16 @@ int main() {
 
     cv::Mat frame;
     FindRectangleParameter para;
-    auto find_rectangle = [](cv::Mat& img, FindRectangleParameter const& para) {
+    auto find_rectangle = [](cv::Mat const& img, FindRectangleParameter const& para) {
         auto recs = findRectangle(img, para);
+        cv::RNG rng;
+        cv::Mat rec_image = img.clone();
         for (auto const& rec : recs) {
+            cv::Scalar color(0, 255, 0);
             for (size_t i = 0; i < 4; ++i)
-                cv::line(img, rec[i], rec[(i + 1) % 4], cv::Scalar(0, 255, 0));
+                cv::line(rec_image, rec[i], rec[(i + 1) % 4], color);
         }
-        cv::imshow("rec", img);
+        cv::imshow("rec", rec_image);
     };
 
     ParameterPackVisualizer visualizer(para, [&frame, &find_rectangle](ParameterPack& para) {
@@ -33,7 +36,8 @@ int main() {
     visualizer.setMaxValue(&para.hough_threshold, 200);
     visualizer.setMaxValueAndPrecision(&para.seg_ratio_low, 1, 0.01);
     visualizer.setMaxValueAndPrecision(&para.seg_ratio_high, 1, 0.01);
-    visualizer.setMaxValue(&para.seg_threshold, 30);
+    visualizer.setMaxValue(&para.seg_core_threshold, 30);
+    visualizer.setMaxValue(&para.seg_threshold, 200);
     visualizer.showInNewWindow("para");
 
     int frame_count = 0;

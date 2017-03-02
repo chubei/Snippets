@@ -13,11 +13,12 @@ int main() {
     cv::Mat frame;
     FindRectangleParameter para;
     auto find_rectangle = [](cv::Mat& img, FindRectangleParameter const& para) {
-        auto rec = findRectangle(img, para);
-        if (rec.size() == 4) {
+        auto recs = findRectangle(img, para);
+        for (auto const& rec : recs) {
             for (size_t i = 0; i < 4; ++i)
                 cv::line(img, rec[i], rec[(i + 1) % 4], cv::Scalar(0, 255, 0));
         }
+        cv::imshow("rec", img);
     };
 
     ParameterPackVisualizer visualizer(para, [&frame, &find_rectangle](ParameterPack& para) {

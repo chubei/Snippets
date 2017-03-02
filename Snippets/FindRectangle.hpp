@@ -1,6 +1,7 @@
 #pragma once
 #include "ParameterPack.hpp"
 #include <opencv2/imgproc.hpp>
+#include <array>
 
 struct FindRectangleParameter : public ParameterPack {
     FindRectangleParameter() {
@@ -11,6 +12,7 @@ struct FindRectangleParameter : public ParameterPack {
         registerParameter(hough_threshold, "votes");
         registerParameter(seg_ratio_low, "low");
         registerParameter(seg_ratio_high, "high");
+        registerParameter(seg_core_threshold, "core");
         registerParameter(seg_threshold, "thres");
         registerParameter(intersection_gap_ratio, "gap");
     }
@@ -22,9 +24,10 @@ struct FindRectangleParameter : public ParameterPack {
     int hough_threshold{ 100 };
     double seg_ratio_low{ 0.6 };
     double seg_ratio_high{ 0.9 };
-    int seg_threshold{ 20 };
+    int seg_core_threshold{ 20 };
+    int seg_threshold{ 80 };
     double intersection_gap_ratio{ 0.1 };
     double intersection_angle{ CV_PI / 4. };
 };
 
-std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParameter const& para);
+std::vector<std::array<cv::Point2f, 4>> findRectangle(cv::Mat const& img, FindRectangleParameter const& para);

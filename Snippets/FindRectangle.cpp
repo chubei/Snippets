@@ -113,16 +113,105 @@ namespace {
         }
         return ret;
     }
+
+    template<int RelayCount>
+    using RelayGraph = std::vector<std::vector<std::array<size_t, RelayCount + 1>>>;
+    template<int MaxRelayCount>
+    class RelayGraphStack;
+
+    template<>
+    class RelayGraphStack<0> {
+    protected:
+        RelayGraph<0> _graph;
+        size_t _vertex_count;
+        size_t _edge_count;
+    public:
+        RelayGraphStack(size_t graph_vertex_count, size_t graph_edge_count) {
+            _vertex_count = graph_vertex_count;
+            _edge_count = graph_edge_count;
+            _graph.resize(graph_vertex_count);
+            for (auto& row : _graph) {
+                row.resize(graph_vertex_count);
+                for (auto& ele : row)
+                    ele.fill(graph_edge_count);
+            }
+        }
+
+        RelayGraph<0>& GetBottomGraph() {
+            return _graph;
+        }
+
+        RelayGraph<0> const& GetBottomGraph() const {
+            return _graph;
+        }
+
+        RelayGraph<0> const& GetGraph() const {
+            return _graph;
+        }
+
+        void Compute() {}
+    };
+
+    template<int MaxRelayCount>
+    class RelayGraphStack : public RelayGraphStack<MaxRelayCount - 1> {
+    protected:
+        RelayGraph<MaxRelayCount> _graph;
+    public:
+        RelayGraphStack(size_t graph_vertex_count, size_t graph_edge_count)
+            : RelayGraphStack<MaxRelayCount - 1>(graph_vertex_count, graph_edge_count) {
+            _graph.resize(graph_vertex_count);
+            for (auto& row : _graph) {
+                row.resize(graph_vertex_count);
+                for (auto& ele : row)
+                    ele.fill(graph_edge_count);
+            }
+        }
+
+        RelayGraph<0>& GetBottomGraph() {
+            return RelayGraphStack<0>::GetBottomGraph();
+        }
+
+        RelayGraph<0> const& GetBottomGraph() const {
+            return RelayGraphStack<0>::GetBottomGraph();
+        }
+
+        RelayGraph<MaxRelayCount> const& GetGraph() const {
+            return _graph;
+        }
+
+        void Compute() {
+            RelayGraphStack<MaxRelayCount - 1>::Compute();
+
+            auto const& graph0 = GetBottomGraph();
+            auto const& previous = RelayGraphStack<MaxRelayCount - 1>::GetGraph();
+            for (size_t i = 0; i < _vertex_count; ++i) {
+                for (size_t j = 0; j < _vertex_count; ++j) {
+                    if (j == i)
+                        continue;
+                    for (size_t k = 0; k < _vertex_count; ++k) {
+                        auto const& previous_path = previous[i][j];
+                        auto const& last_path = graph0[j][k];
+                        if (previous_path.back() < _edge_count && last_path[0] < _edge_count
+                            && std::find(previous_path.begin(), previous_path.end(), last_path[0]) == previous_path.end()) {
+                            std::copy(previous_path.begin(), previous_path.end(), _graph[i][k].begin());
+                            _graph[i][k].back() = last_path[0];
+                        }
+                    }
+                }
+            }
+        }
+    };
 }
 
-std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParameter const& para) {
-    auto para_check = (para.seg_threshold > 0
+std::vector<std::array<cv::Point2f, 4>> findRectangle(cv::Mat const& img, FindRectangleParameter const& para) {
+    using RetType = std::vector<std::array<cv::Point2f, 4>>;
+    auto para_check = (para.seg_core_threshold > 0
         && para.seg_ratio_high > 0 && para.seg_ratio_high <= 1
         && para.seg_ratio_low >= 0 && para.seg_ratio_low <= 1
         && para.seg_ratio_low <= para.seg_ratio_high);
     assert(para_check);
     if (!para_check)
-        return std::vector<cv::Point2f>();
+        return RetType();
 
     cv::Mat gray_image;
     cv::cvtColor(img, gray_image, cv::COLOR_BGR2GRAY);
@@ -163,7 +252,6 @@ std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParamete
     // try to find longest line segment s.t.
     // 1. more than $ratio_low points on line are edge points
     // 2. exists a sub-segment of at least $length points that more than $ratio_high points on line are edge points
-
     std::vector<Segment> line_segments;
     size_t line_index = 0;
     std::mutex line_segments_mutex, line_index_mutex;
@@ -191,11 +279,11 @@ std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParamete
             edge_count[0] = point_is_edge[0] ? 1 : 0;
             for (size_t i = 1; i < point_is_edge.size(); ++i)
                 edge_count[i] = edge_count[i - 1] + (point_is_edge[i] ? 1 : 0);
-            if (edge_count.back() < para.seg_threshold * para.seg_ratio_high)
+            if (edge_count.back() < para.seg_core_threshold * para.seg_ratio_high)
                 continue;
 
             size_t core_seg_start = point_is_edge.size(), core_seg_end = point_is_edge.size();
-            for (size_t core_seg_length = point_is_edge.size(); core_seg_length >= para.seg_threshold; --core_seg_length) {
+            for (size_t core_seg_length = point_is_edge.size(); core_seg_length >= para.seg_core_threshold; --core_seg_length) {
                 for (core_seg_end = point_is_edge.size(); core_seg_end >= core_seg_length; --core_seg_end) {
                     size_t start = core_seg_end - core_seg_length;
                     if ((edge_count[core_seg_end - 1] - (start > 0 ? edge_count[start - 1] : 0)) / (double)core_seg_length >= para.seg_ratio_high) {
@@ -245,7 +333,7 @@ std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParamete
     for (auto const& seg : line_segments)
         cv::line(seg_image, seg.pt1, seg.pt2, cv::Scalar(rng.uniform(0, 255), rng.uniform(0, 255), rng.uniform(0, 255)));
 
-    // construct intersection graph
+    // compute intersections
     std::vector<std::pair<size_t, size_t>> intersection_pair;
     for (size_t i = 0; i < line_segments.size(); ++i) {
         for (size_t j = i + 1; j < line_segments.size(); ++j)
@@ -303,5 +391,27 @@ std::vector<cv::Point2f> findRectangle(cv::Mat const& img, FindRectangleParamete
         cv::circle(seg_image, inter.pt, 1, cv::Scalar(0, 255, 0), 3);
     cv::imshow("segments", seg_image);
 
-    return std::vector<cv::Point2f>();
+    // find quadrilaterals
+    const static int target_relay_count = 3;
+    RelayGraphStack<target_relay_count> relay_graph_stack(line_segments.size(), line_intersections.size());
+    auto& bottom_graph = relay_graph_stack.GetBottomGraph();
+    for (size_t i = 0; i < line_intersections.size(); ++i) {
+        auto const& pair = line_intersections[i].segment_indices;
+        bottom_graph[pair.first][pair.second][0] = i;
+        bottom_graph[pair.second][pair.first][0] = i;
+    }
+    relay_graph_stack.Compute();
+
+    auto const& relay_graph = relay_graph_stack.GetGraph();
+    RetType ret;
+    for (size_t i = 0; i < line_segments.size(); ++i) {
+        auto const& path = relay_graph[i][i];
+        if (path[0] < line_intersections.size()) {
+            ret.resize(ret.size() + 1);
+            std::transform(path.begin(), path.end(), ret.back().begin(), [&line_intersections](size_t inter_index) {
+                return line_intersections[inter_index].pt;
+            });
+        }
+    }
+    return ret;
 }
